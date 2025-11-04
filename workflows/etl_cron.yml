@@ -1,0 +1,39 @@
+name: ETL Hourly
+
+on:
+  schedule:
+    - cron: "*/60 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  run-etl:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run ETL (RSS + CSV → SQLite)
+        run: python etl_to_sqlite.py
+
+      - name: Export JSON for web
+        run: python export_json.py
+
+      - name: Commit & Push JSON/DB
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/sentiment.db data/daily_sentiment.json || true
+          git commit -m "Update data via ETL" || echo "Nothing to commit"
+          git push
