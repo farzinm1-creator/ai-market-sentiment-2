@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: sentiment-demo
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app/app_streamlit_db.py --server.port $PORT --server.address 0.0.0.0
+    envVars:
+      - key: APP_MODE
+        value: demo
+      - key: DATA_URL
+        value: https://raw.githubusercontent.com/<YOUR_GH_USERNAME>/<YOUR_REPO>/main/data/daily_sentiment.json
+
+  - type: web
+    name: sentiment-pro
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app/app_streamlit_db.py --server.port $PORT --server.address 0.0.0.0
+    envVars:
+      - key: APP_MODE
+        value: pro
+      - key: PRO_KEY
+        sync: false
+      - key: DATA_URL
+        value: https://raw.githubusercontent.com/<YOUR_GH_USERNAME>/<YOUR_REPO>/main/data/daily_sentiment.json

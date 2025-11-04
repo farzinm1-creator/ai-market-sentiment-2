@@ -1,0 +1,8 @@
+streamlit
+pandas
+matplotlib
+pyyaml
+feedparser
+transformers
+torch
+requests

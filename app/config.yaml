@@ -1,0 +1,3 @@
+backend: finbert
+finbert_model: ProsusAI/finbert
+min_abs_final_for_daily: 0.12
