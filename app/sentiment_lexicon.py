@@ -5,6 +5,7 @@ POSITIVE = {
     "improve","positive","growth","strong","breakout","support","recover","rise",
     "green","beat","record","jump","strengthens","celebrate","recovery","momentum"
 }
+
 NEGATIVE = {
     "bear","bearish","fall","drop","down","sell","fear","panic","worry","risk-off",
     "recession","weak","loss","dump","crash","red","reject","bad","concern","slip",
@@ -14,7 +15,8 @@ NEGATIVE = {
 def score_text(text: str) -> float:
     if not text:
         return 0.0
-    words = {w.strip(".,!?;:()[]{}"'").lower() for w in text.split()}
+    # ✅ نسخه‌ی اصلاح‌شده با کوتیشن صحیح:
+    words = {w.strip(".,!?;:()[]{}\"'").lower() for w in text.split()}
     pos = len(words & POSITIVE)
     neg = len(words & NEGATIVE)
     if pos == 0 and neg == 0:
