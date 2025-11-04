@@ -15,8 +15,8 @@ NEGATIVE = {
 def score_text(text: str) -> float:
     if not text:
         return 0.0
-    # ✅ نسخه‌ی اصلاح‌شده با کوتیشن صحیح:
-    words = {w.strip(".,!?;:()[]{}\"'").lower() for w in text.split()}
+    # 👇 این خط تصحیح‌شده است. کوتیشن‌ها دقیق‌اند.
+    words = {w.strip('.,!?;:()[]{}"\'' ).lower() for w in text.split()}
     pos = len(words & POSITIVE)
     neg = len(words & NEGATIVE)
     if pos == 0 and neg == 0:
