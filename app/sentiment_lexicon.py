@@ -1,4 +1,5 @@
 from typing import List
+import string  # ✅ برای حذف علائم نگارشی بدون دردسر کوتیشن‌ها
 
 POSITIVE = {
     "optimism","optimistic","bull","bullish","rally","gain","up","surge","approve",
@@ -15,8 +16,8 @@ NEGATIVE = {
 def score_text(text: str) -> float:
     if not text:
         return 0.0
-    # 👇 این خط تصحیح‌شده است. کوتیشن‌ها دقیق‌اند.
-    words = {w.strip('.,!?;:()[]{}"\'' ).lower() for w in text.split()}
+    # ✅ بدون کوتیشن‌های دردسرساز: همه‌ی علائم نگارشی استاندارد
+    words = {w.strip(string.punctuation).lower() for w in text.split()}
     pos = len(words & POSITIVE)
     neg = len(words & NEGATIVE)
     if pos == 0 and neg == 0:
