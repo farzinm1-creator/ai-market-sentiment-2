@@ -1,37 +1,41 @@
-import os, json, requests
-from pathlib import Path
-from datetime import datetime
-import pandas as pd
+import json
+from datetime import date
 
-DATA = Path("data/daily_sentiment.json")
-HOOK = os.getenv("ZAPIER_HOOK_URL")
+# خواندن داده‌های احساسات ذخیره‌شده
+with open("data/daily_sentiment.json", "r", encoding="utf-8") as f:
+    data = json.load(f)
 
-def today_summary():
-    if not DATA.exists():
-        return "Daily Sentiment Snapshot:\nNo data yet."
-    df = pd.read_json(DATA)
-    if df.empty:
-        return "Daily Sentiment Snapshot:\nNo data yet."
-    df["day"] = pd.to_datetime(df["day"])
-    last_day = df["day"].max()
-    d = df[df["day"] == last_day]
-    lines = [f"Daily Sentiment Snapshot ({last_day.date()}):"]
-    for _, r in d.iterrows():
-        s = float(r["avg_sentiment"])
-        label = "positive ✅" if s>0.1 else ("negative ❗" if s<-0.1 else "neutral ⏸️")
-        lines.append(f"- {r['asset']}: {s:.2f} ({label})")
-    lines.append("\nDemo: BTC only | Pro: full assets & alerts.")
-    return "\n".join(lines)
+today = str(date.today())
+rows = [row for row in data if row["day"] == today]
 
-def main():
-    msg = today_summary()
-    print(msg)
-    if HOOK:
-        try:
-            requests.post(HOOK, json={"text": msg}, timeout=12)
-            print("Posted to webhook.")
-        except Exception as e:
-            print("Webhook error:", e)
+# اگر داده‌ای وجود نداشت
+if not rows:
+    print("Daily Sentiment Snapshot:\nNo data received.")
+    exit()
 
-if __name__ == "__main__":
-    main()
+# ساخت متن پست
+lines = [f"📊 Daily Market Sentiment Snapshot ({today}):"]
+
+for row in rows:
+    sentiment = row["avg_sentiment"]
+
+    # تعیین وضعیت بازار با ایموجی
+    if sentiment > 0.15:
+        emoji = "✅ bullish"
+    elif sentiment < -0.15:
+        emoji = "❗ bearish"
+    else:
+        emoji = "⏸️ neutral"
+
+    lines.append(f"- {row['asset']}: {sentiment:.2f} → {emoji}")
+
+# ✅ اضافه کردن لینک نسخه دمو و نسخه پرو
+lines.append("\n🔗 نسخه دمو (فقط بیت‌کوین): https://sentiment-demo.onrender.com")
+lines.append("🚀 نسخه حرفه‌ای (تمام دارایی‌ها + هشدار لحظه‌ای): https://sentiment-pro.onrender.com")
+
+# ✅ هشتگ‌های حرفه‌ای لینکدین
+lines.append("\n#Crypto #Forex #Gold #Oil #Trading #AI #SentimentAnalysis #MarketInsights")
+
+# نهایی‌سازی و ارسال خروجی
+text = "\n".join(lines)
+print(text)
