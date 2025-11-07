@@ -1,0 +1,48 @@
+name: Wallet Watcher (TRON USDT)
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # هر 10 دقیقه
+  workflow_dispatch: {}       # اجرای دستی هم داشته باش
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore processed TX cache
+        uses: actions/cache@v4
+        with:
+          path: .state
+          key: tron-usdt-${{ secrets.WALLET_ADDRESS }}-v1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run watcher
+        env:
+          APPS_SCRIPT_URL:   ${{ secrets.APPS_SCRIPT_URL }}
+          APPS_SCRIPT_TOKEN: ${{ secrets.APPS_SCRIPT_TOKEN }}
+          WALLET_ADDRESS:    ${{ secrets.WALLET_ADDRESS }}
+          USDT_CONTRACT:     ${{ secrets.USDT_CONTRACT }}   # اختیاری؛ خالی بگذار تا با نماد USDT فیلتر کند
+          MONTHLY_AMOUNT:    ${{ secrets.MONTHLY_AMOUNT }}  # پیش‌فرض 15.0
+          QUARTERLY_AMOUNT:  ${{ secrets.QUARTERLY_AMOUNT }}# پیش‌فرض 40.0
+          AMOUNT_EPS:        "0.05"
+        run: |
+          python watch_tron_usdt.py
+
+      - name: Save updated cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state
+          key: tron-usdt-${{ secrets.WALLET_ADDRESS }}-v1-${{ github.run_id }}
