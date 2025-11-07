@@ -1,40 +1,71 @@
-import json
+# post_summary.py
+# - می‌خواند: data/daily_sentiment.json یا DATA_URL (اختیاری)
+# - متن پست را می‌سازد
+# - در summary.txt چاپ می‌کند (برای لاگ)
+# - اگر ZAPIER_HOOK_URL ست باشد → مستقیم به Zapier POST می‌کند
+
+import os, json, sys
 from datetime import datetime
 
-# 1) خواندن فایل JSON از ریپو
-with open("data/daily_sentiment.json", "r", encoding="utf-8") as f:
-    data = json.load(f)
+def load_data():
+    data_url = os.getenv("DATA_URL", "").strip()
+    if data_url:
+        # خواندن مستقیم از GitHub Raw (یا هر URL JSON)
+        import urllib.request
+        with urllib.request.urlopen(data_url, timeout=20) as r:
+            return json.load(r)
+    # حالت فایل محلی
+    with open("data/daily_sentiment.json", "r", encoding="utf-8") as f:
+        return json.load(f)
 
-if not data:
-    print("Daily Sentiment Snapshot:\nNo data received.")
-    raise SystemExit(0)
+def build_text(data):
+    if not data:
+        return "Daily Sentiment Snapshot:\nNo data received."
+    for r in data:
+        r["__dt"] = datetime.fromisoformat(r["day"])
+    latest = max(r["__dt"] for r in data)
+    rows = [r for r in data if r["__dt"].date() == latest.date()]
 
-# 2) تعیین آخرین تاریخ موجود در فایل (به‌جای اصرار روی امروز)
-for r in data:
-    r["day_dt"] = datetime.fromisoformat(r["day"])
+    lines = [f"📊 Daily Market Sentiment Snapshot ({latest.date()}):"]
+    for r in sorted(rows, key=lambda x: x["asset"]):
+        s = float(r["avg_sentiment"])
+        emo = "✅ bullish" if s > 0.15 else ("❗ bearish" if s < -0.15 else "⏸️ neutral")
+        lines.append(f"- {r['asset']}: {s:.2f} → {emo}")
 
-latest_day = max(r["day_dt"] for r in data)
-rows = [r for r in data if r["day_dt"].date() == latest_day.date()]
+    lines += [
+        "",
+        "🔗 Demo (BTC only): https://sentiment-demo.onrender.com",
+        "🚀 Pro (all assets + alerts): https://sentiment-pro.onrender.com",
+        "",
+        "#Crypto #Gold #Oil #Forex #AI #Sentiment #Trading",
+        "",
+        "⏱ " + datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+    ]
+    return "\n".join(lines)
 
-# 3) ساخت متن پست
-lines = [f"📊 Daily Market Sentiment Snapshot ({latest_day.date()}):"]
-for r in sorted(rows, key=lambda x: x["asset"]):
-    s = float(r["avg_sentiment"])
-    if s > 0.15:
-        emo = "✅ bullish"
-    elif s < -0.15:
-        emo = "❗ bearish"
-    else:
-        emo = "⏸️ neutral"
-    lines.append(f"- {r['asset']}: {s:.2f} → {emo}")
+def post_to_zapier(text):
+    hook = os.getenv("ZAPIER_HOOK_URL", "").strip()
+    if not hook:
+        print("ZAPIER_HOOK_URL not set → skipping POST to Zapier.")
+        return
+    try:
+        import requests
+        resp = requests.post(hook, json={"text": text}, timeout=15)
+        print("Webhook status:", resp.status_code)
+        print("Webhook response:", resp.text[:500])
+        resp.raise_for_status()
+    except Exception as e:
+        print("POST to Zapier failed:", e, file=sys.stderr)
 
-# 4) لینک‌ها و هشتگ‌ها
-lines.append("\n🔗 Demo (BTC only): https://sentiment-demo.onrender.com")
-lines.append("🚀 Pro (all assets + alerts): https://sentiment-pro.onrender.com")
-lines.append("\n#Crypto #Gold #Oil #Forex #AI #Sentiment #Trading")
+def main():
+    data = load_data()
+    text = build_text(data)
+    # برای لاگ گیت‌هاب:
+    print(text)
+    with open("summary.txt", "w", encoding="utf-8") as f:
+        f.write(text)
+    # ارسال به وبهوک
+    post_to_zapier(text)
 
-# 5) تایم‌استمپ برای جلوگیری از خطای Duplicate
-stamp = "⏱ " + datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-lines.append("\n" + stamp)
-
-print("\n".join(lines))
+if __name__ == "__main__":
+    main()
