@@ -2,32 +2,29 @@ name: LinkedIn Daily Post
 
 on:
   schedule:
-    - cron: '0 10 * * *'
-  workflow_dispatch:
+    - cron: '0 10 * * *'    # اجرای خودکار هر روز ساعت 13:30 به وقت ایران (10:00 UTC)
+  workflow_dispatch:         # اجرای دستی از GitHub Actions
 
 jobs:
   post-linkedin:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout source
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build sentiment text
-        run: |
-          python post_summary.py || true
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
 
-      - name: Send to Zapier (curl)
+      - name: Install dependencies
+        run: |
+          pip install requests
+
+      - name: Build message & send to Zapier
         env:
           ZAPIER_HOOK_URL: ${{ secrets.ZAPIER_HOOK_URL }}
+          DATA_URL: ${{ secrets.DATA_URL }}   # اختیاری (اگر آدرس فایل JSON را به صورت Secret ذخیره کرده‌ای)
         run: |
-          test -n "$ZAPIER_HOOK_URL" || (echo "ZAPIER_HOOK_URL missing" && exit 1)
-          echo "[SEND] POST → $ZAPIER_HOOK_URL"
-          http_code=$(curl -sS -o resp.txt -w "%{http_code}" \
-            -X POST "$ZAPIER_HOOK_URL" \
-            -H "Content-Type: application/json" \
-            --data "{\"text\": \"$(cat summary.txt | sed 's/\"/\\"/g')\"}")
-          echo "HTTP code: $http_code"
-          echo "--- Response ---"
-          cat resp.txt
-          echo "----------------"
-          [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]
+          python post_summary.py || true
