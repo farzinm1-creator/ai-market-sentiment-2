@@ -1,41 +1,40 @@
 import json
-from datetime import date
+from datetime import datetime
 
-# خواندن داده‌های احساسات ذخیره‌شده
+# 1) خواندن فایل JSON از ریپو
 with open("data/daily_sentiment.json", "r", encoding="utf-8") as f:
     data = json.load(f)
 
-today = str(date.today())
-rows = [row for row in data if row["day"] == today]
-
-# اگر داده‌ای وجود نداشت
-if not rows:
+if not data:
     print("Daily Sentiment Snapshot:\nNo data received.")
-    exit()
+    raise SystemExit(0)
 
-# ساخت متن پست
-lines = [f"📊 Daily Market Sentiment Snapshot ({today}):"]
+# 2) تعیین آخرین تاریخ موجود در فایل (به‌جای اصرار روی امروز)
+for r in data:
+    r["day_dt"] = datetime.fromisoformat(r["day"])
 
-for row in rows:
-    sentiment = row["avg_sentiment"]
+latest_day = max(r["day_dt"] for r in data)
+rows = [r for r in data if r["day_dt"].date() == latest_day.date()]
 
-    # تعیین وضعیت بازار با ایموجی
-    if sentiment > 0.15:
-        emoji = "✅ bullish"
-    elif sentiment < -0.15:
-        emoji = "❗ bearish"
+# 3) ساخت متن پست
+lines = [f"📊 Daily Market Sentiment Snapshot ({latest_day.date()}):"]
+for r in sorted(rows, key=lambda x: x["asset"]):
+    s = float(r["avg_sentiment"])
+    if s > 0.15:
+        emo = "✅ bullish"
+    elif s < -0.15:
+        emo = "❗ bearish"
     else:
-        emoji = "⏸️ neutral"
+        emo = "⏸️ neutral"
+    lines.append(f"- {r['asset']}: {s:.2f} → {emo}")
 
-    lines.append(f"- {row['asset']}: {sentiment:.2f} → {emoji}")
+# 4) لینک‌ها و هشتگ‌ها
+lines.append("\n🔗 Demo (BTC only): https://sentiment-demo.onrender.com")
+lines.append("🚀 Pro (all assets + alerts): https://sentiment-pro.onrender.com")
+lines.append("\n#Crypto #Gold #Oil #Forex #AI #Sentiment #Trading")
 
-# ✅ اضافه کردن لینک نسخه دمو و نسخه پرو
-lines.append("\n🔗 نسخه دمو (فقط بیت‌کوین): https://sentiment-demo.onrender.com")
-lines.append("🚀 نسخه حرفه‌ای (تمام دارایی‌ها + هشدار لحظه‌ای): https://sentiment-pro.onrender.com")
+# 5) تایم‌استمپ برای جلوگیری از خطای Duplicate
+stamp = "⏱ " + datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+lines.append("\n" + stamp)
 
-# ✅ هشتگ‌های حرفه‌ای لینکدین
-lines.append("\n#Crypto #Forex #Gold #Oil #Trading #AI #SentimentAnalysis #MarketInsights")
-
-# نهایی‌سازی و ارسال خروجی
-text = "\n".join(lines)
-print(text)
+print("\n".join(lines))
