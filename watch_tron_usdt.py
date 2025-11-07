@@ -10,9 +10,10 @@ WALLET_ADDRESS    = os.environ.get("WALLET_ADDRESS","").strip()
 # اگر قرارداد دقیق USDT را می‌دانی بگذار؛ وگرنه با نماد USDT فیلتر می‌کنیم
 USDT_CONTRACT     = os.environ.get("USDT_CONTRACT","Tether_USDT_TRON").strip()
 
-MONTHLY_AMOUNT   = float(os.environ.get("MONTHLY_AMOUNT","15.0"))
-QUARTERLY_AMOUNT = float(os.environ.get("QUARTERLY_AMOUNT","40.0"))
-AMOUNT_EPS       = float(os.environ.get("AMOUNT_EPS","0.05"))
+MONTHLY_AMOUNT   = float(os.environ.get("MONTHLY_AMOUNT", "15.0"))
+QUARTERLY_AMOUNT = float(os.environ.get("QUARTERLY_AMOUNT", "40.0"))
+AMOUNT_EPS       = float(os.environ.get("AMOUNT_EPS", "0.05"))
+
 
 STATE_PATH = Path(".state/processed_txids.json")
 STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -242,3 +243,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
