@@ -2,7 +2,7 @@ name: LinkedIn Daily Post
 
 on:
   schedule:
-    - cron: '0 10 * * *'      # روزانه 10:00 UTC (حدود 13:30 ایران)
+    - cron: '0 10 * * *'      # روزانه 10:00 UTC (~13:30 ایران)
   workflow_dispatch:          # اجرای دستی
 
 jobs:
@@ -12,64 +12,86 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests
-
-      - name: Build post text
+      - name: Build message (from DATA_URL or file)
         id: build
+        env:
+          DATA_URL: ${{ secrets.DATA_URL }}
         run: |
-          python - << 'PY'
-          import json
-          from datetime import datetime
+          set -e
+          echo "[Build] Building post payload…"
 
-          with open("data/daily_sentiment.json","r",encoding="utf-8") as f:
-              data=json.load(f)
+          if [ -n "$DATA_URL" ]; then
+            python - <<'PY'
+import json, urllib.request, datetime
+url = "${{ secrets.DATA_URL }}"
+with urllib.request.urlopen(url, timeout=20) as r:
+    data = json.load(r)
+if not data:
+    txt="Daily Sentiment Snapshot:\nNo data received."
+else:
+    for x in data:
+        x["__dt"]=datetime.datetime.fromisoformat(x["day"])
+    latest=max(x["__dt"] for x in data)
+    rows=[x for x in data if x["__dt"].date()==latest.date()]
+    lines=[f"📊 Daily Market Sentiment Snapshot ({latest.date()}):"]
+    for x in sorted(rows,key=lambda z:z["asset"]):
+        s=float(x["avg_sentiment"])
+        emo = "✅ bullish" if s>0.15 else ("❗ bearish" if s<-0.15 else "⏸️ neutral")
+        lines.append(f"- {x['asset']}: {s:.2f} → {emo}")
+    lines+=["", "🔗 Demo: https://sentiment-demo.onrender.com",
+            "🚀 Pro: https://sentiment-pro.onrender.com", "",
+            "#Crypto #Gold #Oil #Forex #AI #Trading", "",
+            "⏱ " + datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")]
+    txt="\n".join(lines)
 
-          if not data:
-              txt="Daily Sentiment Snapshot:\nNo data received."
-          else:
-              for r in data:
-                  r["__dt"]=datetime.fromisoformat(r["day"])
-              latest=max(r["__dt"] for r in data)
-              rows=[r for r in data if r["__dt"].date()==latest.date()]
+open("payload.json","w",encoding="utf-8").write(
+    json.dumps({"text":txt}, ensure_ascii=False)
+)
+print(txt[:300])
+PY
+          else
+            python - <<'PY'
+import json, datetime
+with open("data/daily_sentiment.json","r",encoding="utf-8") as f:
+    data=json.load(f)
+if not data:
+    txt="Daily Sentiment Snapshot:\nNo data received."
+else:
+    for x in data:
+        x["__dt"]=datetime.datetime.fromisoformat(x["day"])
+    latest=max(x["__dt"] for x in data)
+    rows=[x for x in data if x["__dt"].date()==latest.date()]
+    lines=[f"📊 Daily Market Sentiment Snapshot ({latest.date()}):"]
+    for x in sorted(rows,key=lambda z:z["asset"]):
+        s=float(x["avg_sentiment"])
+        emo = "✅ bullish" if s>0.15 else ("❗ bearish" if s<-0.15 else "⏸️ neutral")
+        lines.append(f"- {x['asset']}: {s:.2f} → {emo}")
+    lines+=["", "🔗 Demo: https://sentiment-demo.onrender.com",
+            "🚀 Pro: https://sentiment-pro.onrender.com", "",
+            "#Crypto #Gold #Oil #Forex #AI #Trading", "",
+            "⏱ " + datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")]
+    txt="\n".join(lines)
 
-              lines=[f"📊 Daily Market Sentiment Snapshot ({latest.date()}):"]
-              for r in sorted(rows,key=lambda x:x["asset"]):
-                  s=float(r["avg_sentiment"])
-                  emo="✅ bullish" if s>0.15 else ("❗ bearish" if s<-0.15 else "⏸️ neutral")
-                  lines.append(f"- {r['asset']}: {s:.2f} → {emo}")
-              lines.append("\n🔗 Demo (BTC only): https://sentiment-demo.onrender.com")
-              lines.append("🚀 Pro (all assets + alerts): https://sentiment-pro.onrender.com")
-              lines.append("\n#Crypto #Gold #Oil #Forex #AI #Sentiment #Trading")
-              lines.append("\n⏱ " + datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"))
-              txt="\n".join(lines)
+open("payload.json","w",encoding="utf-8").write(
+    json.dumps({"text":txt}, ensure_ascii=False)
+)
+print(txt[:300])
+PY
+          fi
 
-          print(txt)  # متن پست در لاگ
-          with open("post.txt","w",encoding="utf-8") as f:
-              f.write(txt)
-          PY
-
-      - name: Send to Zapier webhook
+      - name: Send to Zapier (curl)
         env:
           ZAPIER_HOOK_URL: ${{ secrets.ZAPIER_HOOK_URL }}
         run: |
-          python - << 'PY'
-          import os, requests, sys
-          url=os.environ.get("ZAPIER_HOOK_URL","").strip()
-          if not url:
-              print("ERROR: ZAPIER_HOOK_URL is empty.", file=sys.stderr)
-              sys.exit(1)
-          with open("post.txt","r",encoding="utf-8") as f:
-              text=f.read()
-          r=requests.post(url, json={"text": text}, timeout=15)
-          print("Webhook status:", r.status_code)
-          print("Posted to webhook.")
-          r.raise_for_status()
-          PY
+          set -e
+          test -n "$ZAPIER_HOOK_URL" || (echo "ZAPIER_HOOK_URL is empty" && exit 1)
+          echo "[Send] POST to: $ZAPIER_HOOK_URL"
+          http_code=$(curl -sS -o resp.txt -w "%{http_code}" \
+            -X POST "$ZAPIER_HOOK_URL" \
+            -H "Content-Type: application/json" \
+            --data-binary @payload.json)
+          echo "HTTP code: $http_code"
+          echo "--- Response ---"
+          cat resp.txt
+          echo "----------------"
+          [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]
