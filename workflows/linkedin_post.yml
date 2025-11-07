@@ -2,8 +2,8 @@ name: LinkedIn Daily Post
 
 on:
   schedule:
-    - cron: "0 10 * * *"
-  workflow_dispatch: {}
+    - cron: '0 10 * * *'      # روزانه 10:00 UTC
+  workflow_dispatch:          # اجرای دستی
 
 jobs:
   post-linkedin:
@@ -11,16 +11,66 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup Python
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
+
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      - name: Build message & send to Zapier
+          pip install requests
+
+      # 1) تولید متن پست (از فایل JSON داخل repo)
+      - name: Build post text
+        id: build
+        run: |
+          python - << 'PY'
+          import json
+          from datetime import datetime
+
+          with open("data/daily_sentiment.json","r",encoding="utf-8") as f:
+              data=json.load(f)
+
+          if not data:
+              txt="Daily Sentiment Snapshot:\nNo data received."
+          else:
+              for r in data:
+                  r["__dt"]=datetime.fromisoformat(r["day"])
+              latest=max(r["__dt"] for r in data)
+              rows=[r for r in data if r["__dt"].date()==latest.date()]
+
+              lines=[f"📊 Daily Market Sentiment Snapshot ({latest.date()}):"]
+              for r in sorted(rows,key=lambda x:x["asset"]):
+                  s=float(r["avg_sentiment"])
+                  emo="✅ bullish" if s>0.15 else ("❗ bearish" if s<-0.15 else "⏸️ neutral")
+                  lines.append(f"- {r['asset']}: {s:.2f} → {emo}")
+              lines.append("\n🔗 Demo (BTC only): https://sentiment-demo.onrender.com")
+              lines.append("🚀 Pro (all assets + alerts): https://sentiment-pro.onrender.com")
+              lines.append("\n#Crypto #Gold #Oil #Forex #AI #Sentiment #Trading")
+              lines.append("\n⏱ " + datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"))
+              txt="\n".join(lines)
+
+          print(txt)
+          # خروجی برای استپ بعدی
+          with open("post.txt","w",encoding="utf-8") as f:
+              f.write(txt)
+          PY
+
+      # 2) ارسال به وبهوک Zapier (قطعی)
+      - name: Send to Zapier webhook
         env:
           ZAPIER_HOOK_URL: ${{ secrets.ZAPIER_HOOK_URL }}
         run: |
-          python post_summary.py || true
+          python - << 'PY'
+          import os, requests
+          url=os.environ.get("ZAPIER_HOOK_URL","").strip()
+          if not url:
+              raise SystemExit("ERROR: ZAPIER_HOOK_URL is empty.")
+          with open("post.txt","r",encoding="utf-8") as f:
+              text=f.read()
+          r=requests.post(url, json={"text": text}, timeout=15)
+          print("Webhook status:", r.status_code)
+          print("Posted to webhook.")
+          PY
