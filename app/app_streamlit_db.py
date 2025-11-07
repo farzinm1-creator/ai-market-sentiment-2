@@ -1,141 +1,80 @@
+# app_streamlit_db.py
 import os
-import json
 import requests
-import pandas as pd
-import matplotlib.pyplot as plt
 import streamlit as st
+from datetime import datetime
 
-# ---------- تنظیمات صفحه ----------
-st.set_page_config(
-    page_title="AI Market Sentiment",
-    page_icon="📊",
-    layout="wide"
-)
+APPS_SCRIPT_URL = os.environ.get("APPS_SCRIPT_URL", "").strip()
+SECRET_TOKEN    = os.environ.get("APPS_SECRET_TOKEN", "").strip()
 
-APP_MODE = os.getenv("APP_MODE", "demo").lower()  # demo | pro
-DATA_URL = os.getenv("DATA_URL", "").strip()
-PRO_KEY_ENV = os.getenv("PRO_KEY", "").strip()
+st.set_page_config(page_title="AI Market Sentiment Pro", page_icon="📈", layout="wide")
 
-# ---------- هِدِر ----------
-left, mid, right = st.columns([1.5, 1, 1.2])
-with left:
-    st.markdown("### 📊 AI Market Sentiment Dashboard")
-with right:
-    st.markdown(
-        "#### "
-        + ("**Mode: DEMO**" if APP_MODE == "demo" else "**Mode: PRO**")
-        + f"  \n`Data Source: DATA_URL`"
-    )
+def verify_license(email: str, license_key: str):
+    try:
+        payload = {
+            "token": SECRET_TOKEN,
+            "action": "verify",
+            "email": email.strip(),
+            "license_key": license_key.strip(),
+        }
+        r = requests.post(APPS_SCRIPT_URL, json=payload, timeout=15)
+        if r.headers.get("content-type","").startswith("application/json"):
+            return r.json()
+        return {"ok": False, "error": "bad_content_type"}
+    except Exception as e:
+        return {"ok": False, "error": f"verify_failed: {e}"}
 
-st.markdown("---")
+def login_box():
+    st.markdown("### Sign in")
+    with st.form("login_form", clear_on_submit=False):
+        email = st.text_input("Email", value=st.session_state.get("email",""))
+        license_key = st.text_input("License key", value=st.session_state.get("license_key",""))
+        ok = st.form_submit_button("Continue")
+    if ok:
+        st.session_state.email = email.strip()
+        st.session_state.license_key = license_key.strip()
+        return True
+    return False
 
-# ---------- یوتیلیتی: خواندن JSON از GitHub Raw ----------
-@st.cache_data(ttl=300)
-def fetch_data(url: str):
-    if not url:
-        return pd.DataFrame()
-    r = requests.get(url, timeout=10)
-    r.raise_for_status()
-    data = r.json()  # list of {day, asset, avg_sentiment, count_used}
-    df = pd.DataFrame(data)
-    if not df.empty:
-        df["day"] = pd.to_datetime(df["day"])
-        df = df.sort_values(["asset", "day"])
-    return df
-
-# ---------- لود دیتا ----------
-try:
-    df = fetch_data(DATA_URL)
-except Exception as e:
-    st.error(f"Failed to load data: {e}")
-    st.stop()
-
-if df.empty:
-    st.warning("No data to display yet.")
-    st.stop()
-
-# ---------- کنترل دسترسی PRO ----------
-if APP_MODE == "pro":
-   if "auth_ok" not in st.session_state:
+# -----------------------------------------
+# Auth gate
+# -----------------------------------------
+if "auth_ok" not in st.session_state:
     st.session_state.auth_ok = False
 
+st.title("AI Market Sentiment Pro")
 
-    if not st.session_state["auth_ok"]:
-        st.info("🔐 برای مشاهدهٔ همهٔ دارایی‌ها، کلید دسترسی (Pro Key) را وارد کنید.")
-        k = st.text_input("Pro Key", type="password")
-        go = st.button("ورود به نسخه Pro")
-        if go:
-            if PRO_KEY_ENV and k.strip() == PRO_KEY_ENV:
-                st.session_state["auth_ok"] = True
-                st.success("دسترسی تأیید شد ✅")
-                st.rerun()
-            else:
-                st.error("کلید صحیح نیست.")
-        st.stop()
+if not st.session_state.auth_ok:
+    submitted = login_box()
+    if submitted:
+        email = st.session_state.get("email","").strip()
+        lkey  = st.session_state.get("license_key","").strip()
+        if not email or not lkey:
+            st.error("Please enter your email and license key.")
+            st.stop()
+        res = verify_license(email, lkey)
+        if res.get("ok"):
+            st.session_state.auth_ok = True
+            st.session_state.verified = res
+        else:
+            st.error("Your license is invalid or expired. Please renew to continue.")
+            st.link_button("Renew License", "/buy")
+            st.stop()
 
-# ---------- سایدبار ----------
-with st.sidebar:
-    st.markdown("### 🎛️ تنظیمات")
-    all_assets = sorted(df["asset"].unique().tolist())
-
-    if APP_MODE == "demo":
-        st.caption("نسخه دمو فقط BTC را نشان می‌دهد.")
-        default_assets = ["BTC"] if "BTC" in all_assets else [all_assets[0]]
-        assets = st.multiselect("دارایی‌ها", all_assets, default_assets, disabled=True)
-        st.link_button("🔐 ارتقا به Pro", "https://sentiment-pro.onrender.com")
-    else:
-        # نسخه پرو: کاربر آزاد است
-        default_assets = ["BTC", "GOLD"] if "GOLD" in all_assets else [all_assets[0]]
-        assets = st.multiselect("دارایی‌ها", all_assets, default_assets)
-
-    st.markdown("---")
-    st.caption("⚠️ Educational only — not financial advice.")
-
-# فیلتر دارایی‌ها
-if APP_MODE == "demo":
-    # پین روی BTC
-    work = df[df["asset"] == "BTC"].copy()
+# اگر اینجاییم یعنی لاگین OK
+ver = st.session_state.get("verified", {})
+st.sidebar.markdown("### License")
+if ver:
+    st.sidebar.success(
+        f"✅ Active • {ver.get('plan','-')}\n\n"
+        f"Expires: {ver.get('expires_at','-')}\n"
+        f"Days left: {ver.get('days_left','-')}"
+    )
 else:
-    pick = assets or all_assets
-    work = df[df["asset"].isin(pick)].copy()
+    st.sidebar.info("Session verified.")
 
-if work.empty:
-    st.warning("داده‌ای برای فیلتر انتخابی وجود ندارد.")
-    st.stop()
-
-# ---------- ویجت تاریخ ----------
-min_day, max_day = work["day"].min(), work["day"].max()
-c1, c2 = st.columns(2)
-with c1:
-    st.markdown("#### بازهٔ زمانی")
-with c2:
-    st.caption(f"{min_day.date()} → {max_day.date()}")
-
-# ---------- نمودار ----------
-st.markdown("### روند احساسات")
-fig, ax = plt.subplots(figsize=(12, 5), dpi=120)
-
-for a in sorted(work["asset"].unique()):
-    sub = work[work["asset"] == a]
-    ax.plot(sub["day"], sub["avg_sentiment"], label=a, linewidth=2)
-
-ax.axhline(0, linewidth=1, linestyle="--")
-ax.set_ylabel("Avg Sentiment")
-ax.set_xlabel("Date")
-ax.legend(loc="best")
-st.pyplot(fig, use_container_width=True)
-
-# ---------- جدول خلاصه روز آخر ----------
-last_day = work["day"].max()
-today_rows = work[work["day"] == last_day].copy().sort_values("asset")
-today_rows["signal"] = today_rows["avg_sentiment"].apply(
-    lambda x: "✅ bullish" if x > 0.15 else ("❗ bearish" if x < -0.15 else "⏸️ neutral")
-)
-
-st.markdown("### اسنپ‌شات آخرین روز")
-st.dataframe(
-    today_rows[["asset", "avg_sentiment", "count_used", "signal"]]
-    .rename(columns={"asset": "Asset", "avg_sentiment": "AvgSent", "count_used": "N"})
-    .reset_index(drop=True),
-    use_container_width=True
-)
+# ----------------------------
+# TODO: محتوای اصلی داشبوردت
+# ----------------------------
+st.markdown("## Dashboard")
+st.write("Welcome! Your license is active. Put your charts and analytics here…")
