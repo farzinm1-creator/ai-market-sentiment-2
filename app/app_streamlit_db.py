@@ -56,8 +56,9 @@ if df.empty:
 
 # ---------- کنترل دسترسی PRO ----------
 if APP_MODE == "pro":
-    if "auth_ok" not to in st.session_state:
-        st.session_state["auth_ok"] = False
+   if "auth_ok" not in st.session_state:
+    st.session_state.auth_ok = False
+
 
     if not st.session_state["auth_ok"]:
         st.info("🔐 برای مشاهدهٔ همهٔ دارایی‌ها، کلید دسترسی (Pro Key) را وارد کنید.")
