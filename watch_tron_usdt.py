@@ -3,20 +3,29 @@ import os, json, requests, uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
+# ------------------ ENV + DEFAULTS ------------------ #
+
+def _parse_float_env(key, default_str):
+    val = os.environ.get(key, default_str)
+    try:
+        return float(str(val).strip())
+    except Exception:
+        print(f"[WARN] ENV {key} invalid='{val}', using default {default_str}")
+        return float(default_str)
+
 APPS_SCRIPT_URL   = os.environ.get("APPS_SCRIPT_URL","").strip()
 APPS_SCRIPT_TOKEN = os.environ.get("APPS_SCRIPT_TOKEN","").strip()
 WALLET_ADDRESS    = os.environ.get("WALLET_ADDRESS","").strip()
-
-# اگر قرارداد دقیق USDT را می‌دانی بگذار؛ وگرنه با نماد USDT فیلتر می‌کنیم
 USDT_CONTRACT     = os.environ.get("USDT_CONTRACT","Tether_USDT_TRON").strip()
 
-MONTHLY_AMOUNT   = float(os.environ.get("MONTHLY_AMOUNT", "15.0"))
-QUARTERLY_AMOUNT = float(os.environ.get("QUARTERLY_AMOUNT", "40.0"))
-AMOUNT_EPS       = float(os.environ.get("AMOUNT_EPS", "0.05"))
-
+MONTHLY_AMOUNT   = _parse_float_env("MONTHLY_AMOUNT", "15.0")
+QUARTERLY_AMOUNT = _parse_float_env("QUARTERLY_AMOUNT", "40.0")
+AMOUNT_EPS       = _parse_float_env("AMOUNT_EPS", "0.05")
 
 STATE_PATH = Path(".state/processed_txids.json")
 STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+# ------------------ BASIC HELPERS ------------------ #
 
 def load_state():
     if STATE_PATH.exists():
@@ -35,6 +44,12 @@ def plan_from_amount(amount):
     if abs(amount - QUARTERLY_AMOUNT) <= AMOUNT_EPS:
         return ("Quarterly", 90)
     return (None, 0)
+
+def gen_license():
+    stamp = datetime.utcnow().strftime("%Y%m%d")
+    return f"PRO-{stamp}-{uuid.uuid4().hex[:6].upper()}"
+
+# ------------------ GOOGLE SHEET OPS ------------------ #
 
 def post_issue_license(email, license_key, plan, expires_at, txid, amount):
     payload = {
@@ -55,6 +70,7 @@ def post_issue_license(email, license_key, plan, expires_at, txid, amount):
     return r.json()
 
 def apps_get_pending():
+    """Fetch pending orders"""
     url = f"{APPS_SCRIPT_URL}?pending=1&secret={APPS_SCRIPT_TOKEN}"
     r = requests.get(url, timeout=30)
     r.raise_for_status()
@@ -74,18 +90,16 @@ def apps_get_pending():
     return pend
 
 def apps_complete_pending(tax_id, txid):
+    """Mark pending order as completed"""
     payload = { "token": APPS_SCRIPT_TOKEN, "action": "complete", "tax_id": tax_id, "txid": txid }
     r = requests.post(APPS_SCRIPT_URL, json=payload, timeout=30)
     r.raise_for_status()
     return r.json()
 
-def gen_license():
-    stamp = datetime.utcnow().strftime("%Y%m%d")
-    return f"PRO-{stamp}-{uuid.uuid4().hex[:6].upper()}"
+# ------------------ FETCH TRON TX ------------------ #
 
 def fetch_trc20_transfers_to_me():
     out = []
-    # منبع 1
     try:
         url1 = f"https://apilist.tronscan.org/api/token_trc20/transfers?limit=50&toAddress={WALLET_ADDRESS}"
         j = requests.get(url1, timeout=20).json()
@@ -104,7 +118,7 @@ def fetch_trc20_transfers_to_me():
     except Exception as e:
         print("tronscan.org fetch error:", e)
 
-    # منبع 2 (پشتیبان)
+    # fallback
     if not out:
         try:
             url2 = f"https://apilist.tronscanapi.com/api/token_trc20/transfers?limit=50&toAddress={WALLET_ADDRESS}"
@@ -124,7 +138,7 @@ def fetch_trc20_transfers_to_me():
         except Exception as e:
             print("tronscanapi.com fetch error:", e)
 
-    # نرمال‌سازی amount
+    # normalize
     norm = []
     for t in out:
         if not t["txid"] or not t["to"]:
@@ -144,11 +158,17 @@ def fetch_trc20_transfers_to_me():
         })
     return norm
 
+# ------------------ MAIN LOOP ------------------ #
+
 def main():
     if not (APPS_SCRIPT_URL and APPS_SCRIPT_TOKEN and WALLET_ADDRESS):
-        raise SystemExit("Missing APPS_SCRIPT_URL / APPS_SCRIPT_TOKEN / WALLET_ADDRESS env vars.")
+        raise SystemExit("❌ Missing APPS_SCRIPT_URL / APPS_SCRIPT_TOKEN / WALLET_ADDRESS env vars.")
 
-    pending = apps_get_pending()  # { TAXID_UPPER: {email, plan, amount}, ... }
+    print("Starting TRON Watcher...")
+    print(f"Wallet: {WALLET_ADDRESS}")
+    print(f"Monthly: {MONTHLY_AMOUNT} | Quarterly: {QUARTERLY_AMOUNT} | EPS: {AMOUNT_EPS}")
+
+    pending = apps_get_pending()
     seen = load_state()
     txs = fetch_trc20_transfers_to_me()
     if not txs:
@@ -166,7 +186,7 @@ def main():
         sym = (tx["token_symbol"] or "").upper()
         contract = (tx.get("contract") or "").strip()
 
-        # فیلتر USDT
+        # filter USDT
         if USDT_CONTRACT != "Tether_USDT_TRON":
             if contract.lower() != USDT_CONTRACT.lower():
                 continue
@@ -177,35 +197,29 @@ def main():
         amount = float(tx["amount"])
         memo = (tx.get("data") or "").strip()
         if not memo:
-            continue  # بدون memo نمی‌توان tax_id را پیدا کرد
-
-        tax_id = memo  # هر فرمتی که درگاه می‌سازد، همان را می‌پذیریم
-        key = tax_id.upper()
-        if key not in pending:
-            # سفارشی با این tax_id ثبت نشده
             continue
 
-        order = pending[key]  # email, plan, amount(اختیاری)
+        tax_id = memo
+        key = tax_id.upper()
+        if key not in pending:
+            continue
+
+        order = pending[key]
         exp_amount = float(order.get("amount") or 0.0)
 
-        # پلن و روزها
         plan, days = plan_from_amount(amount)
-
         if exp_amount > 0.0:
-            # اگر مبلغ در pending مشخص شده، باید دقیقاً به آن بخورد
             if abs(amount - exp_amount) > AMOUNT_EPS:
-                print(f"⚠️ TX {txid}: amount={amount} != expected={exp_amount} for tax_id={tax_id}")
+                print(f"⚠️ TX {txid}: amount {amount} != expected {exp_amount} (tax_id={tax_id})")
                 continue
-            # پلن از مقدار pending
             if abs(exp_amount - MONTHLY_AMOUNT) <= AMOUNT_EPS:
                 plan, days = "Monthly", 30
             elif abs(exp_amount - QUARTERLY_AMOUNT) <= AMOUNT_EPS:
                 plan, days = "Quarterly", 90
             else:
-                print(f"⚠️ TX {txid}: unknown expected amount {exp_amount}")
+                print(f"⚠️ TX {txid}: unknown amount {exp_amount}")
                 continue
         else:
-            # اگر pending مقدار ندارد، از مبلغ واقعی استنباط کن
             if not plan:
                 continue
 
@@ -213,7 +227,7 @@ def main():
         license_key = gen_license()
         expires_at = (datetime.utcnow() + timedelta(days=days)).strftime("%Y-%m-%d")
 
-        print(f"✅ Match tax_id={tax_id} plan={plan} amount={amount} → issuing license")
+        print(f"✅ Match tax_id={tax_id} | plan={plan} | amount={amount}")
         try:
             jr = post_issue_license(
                 email=email,
@@ -223,11 +237,10 @@ def main():
                 txid=txid,
                 amount=amount
             )
-            print("AppsScript response:", jr)
-            # complete pending
+            print("→ AppsScript response:", jr)
             try:
                 done = apps_complete_pending(tax_id, txid)
-                print("Completed pending:", done)
+                print("→ Completed pending:", done)
             except Exception as e:
                 print("completePending error:", e)
             seen.add(txid)
@@ -237,10 +250,9 @@ def main():
 
     if processed:
         save_state(seen)
-        print(f"Processed {processed} tx(s).")
+        print(f"✅ Processed {processed} new transaction(s).")
     else:
-        print("No new payable txs.")
+        print("No new payable transactions.")
 
 if __name__ == "__main__":
     main()
-
