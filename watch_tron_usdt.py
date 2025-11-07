@@ -63,7 +63,7 @@ def apps_get_pending():
     pend = {}
     for row in j.get("rows", []):
         tax = str(row.get("tax_id","")).strip()
-        if not tax: 
+        if not tax:
             continue
         pend[tax.upper()] = {
             "email": str(row.get("email","")).strip(),
@@ -100,7 +100,7 @@ def fetch_trc20_transfers_to_me():
                 "ts": int(it.get("block_ts") or 0) // 1000,
                 "data": it.get("data") or it.get("memo") or ""
             })
-    } except Exception as e:
+    except Exception as e:
         print("tronscan.org fetch error:", e)
 
     # منبع 2 (پشتیبان)
@@ -224,8 +224,11 @@ def main():
             )
             print("AppsScript response:", jr)
             # complete pending
-            done = apps_complete_pending(tax_id, txid)
-            print("Completed pending:", done)
+            try:
+                done = apps_complete_pending(tax_id, txid)
+                print("Completed pending:", done)
+            except Exception as e:
+                print("completePending error:", e)
             seen.add(txid)
             processed += 1
         except Exception as e:
