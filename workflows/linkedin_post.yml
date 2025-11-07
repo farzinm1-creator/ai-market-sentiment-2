@@ -2,7 +2,7 @@ name: LinkedIn Daily Post
 
 on:
   schedule:
-    - cron: '0 10 * * *'      # روزانه 10:00 UTC
+    - cron: '0 10 * * *'      # روزانه 10:00 UTC (حدود 13:30 ایران)
   workflow_dispatch:          # اجرای دستی
 
 jobs:
@@ -22,7 +22,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
-      # 1) تولید متن پست (از فایل JSON داخل repo)
       - name: Build post text
         id: build
         run: |
@@ -52,25 +51,25 @@ jobs:
               lines.append("\n⏱ " + datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"))
               txt="\n".join(lines)
 
-          print(txt)
-          # خروجی برای استپ بعدی
+          print(txt)  # متن پست در لاگ
           with open("post.txt","w",encoding="utf-8") as f:
               f.write(txt)
           PY
 
-      # 2) ارسال به وبهوک Zapier (قطعی)
       - name: Send to Zapier webhook
         env:
           ZAPIER_HOOK_URL: ${{ secrets.ZAPIER_HOOK_URL }}
         run: |
           python - << 'PY'
-          import os, requests
+          import os, requests, sys
           url=os.environ.get("ZAPIER_HOOK_URL","").strip()
           if not url:
-              raise SystemExit("ERROR: ZAPIER_HOOK_URL is empty.")
+              print("ERROR: ZAPIER_HOOK_URL is empty.", file=sys.stderr)
+              sys.exit(1)
           with open("post.txt","r",encoding="utf-8") as f:
               text=f.read()
           r=requests.post(url, json={"text": text}, timeout=15)
           print("Webhook status:", r.status_code)
           print("Posted to webhook.")
+          r.raise_for_status()
           PY
