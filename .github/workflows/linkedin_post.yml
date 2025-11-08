@@ -24,7 +24,8 @@ jobs:
 
       - name: Build message & send to Zapier
         env:
-          DATA_URL: ${{ secrets.DATA_URL }}         # 👈 اضافه شده
-          ZAPIER_HOOK_URL: ${{ secrets.ZAPIER_HOOK_URL }}
+  DATA_URL: ${{ vars.DATA_URL }}
+  ZAPIER_HOOK_URL: ${{ secrets.ZAPIER_HOOK_URL }}
+
         run: |
           python post_summary.py || true
