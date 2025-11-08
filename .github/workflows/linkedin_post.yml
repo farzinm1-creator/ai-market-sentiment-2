@@ -2,8 +2,11 @@ name: LinkedIn Daily Post
 
 on:
   schedule:
-    - cron: "0 10 * * *"  # اجرای خودکار روزانه ساعت 10 UTC
-  workflow_dispatch: {}   # اجرای دستی
+    - cron: "0 10 * * *"   # هر روز 10:00 UTC
+  workflow_dispatch: {}     # دکمه Run workflow
+
+permissions:
+  contents: read
 
 jobs:
   post-linkedin:
@@ -24,8 +27,7 @@ jobs:
 
       - name: Build message & send to Zapier
         env:
-  DATA_URL: ${{ vars.DATA_URL }}
-  ZAPIER_HOOK_URL: ${{ secrets.ZAPIER_HOOK_URL }}
-
+          DATA_URL: ${{ vars.DATA_URL }}           # از Variables
+          ZAPIER_HOOK_URL: ${{ secrets.ZAPIER_HOOK_URL }}   # از Secrets
         run: |
           python post_summary.py || true
