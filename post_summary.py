@@ -1,9 +1,6 @@
 # post_summary.py
 # Builds a daily LinkedIn post from a JSON dataset and sends it to Zapier.
-# - DATA_URL: raw JSON URL (or any HTTP URL returning JSON array of rows: {day, asset, avg_sentiment,...})
-# - ZAPIER_HOOK_URL: Zapier Catch Hook URL
-#
-# Output format has no product links; includes hashtags and "We are coming soon".
+# Updated: adds credibility line, more hashtags, and improved context sentence.
 
 import os
 import json
@@ -12,14 +9,12 @@ import datetime
 import urllib.request
 from urllib.error import URLError, HTTPError
 
-# -------- Config --------
-ASSET_ORDER = ["BTC", "ETH", "GOLD", "OIL", "SP500", "USD"]  # add "EURUSD" if you want
+ASSET_ORDER = ["BTC", "ETH", "GOLD", "OIL", "SP500", "USD"]
 NEUTRAL_THRESH = 0.05
 
 DATA_URL = os.environ.get("DATA_URL", "").strip()
 ZAPIER_HOOK_URL = os.environ.get("ZAPIER_HOOK_URL", "").strip()
 
-# -------- Helpers --------
 def fetch_json(url: str):
     if not url:
         raise ValueError("DATA_URL is empty")
@@ -30,17 +25,12 @@ def fetch_json(url: str):
         return json.loads(raw)
 
 def pick_latest_day(rows):
-    """rows: list of dicts having 'day' key -> returns latest day string (YYYY-MM-DD)"""
     days = [r.get("day") for r in rows if isinstance(r, dict) and r.get("day")]
     if not days:
         raise ValueError("No 'day' found in payload")
-    return max(days)  # assumes ISO date strings
+    return max(days)
 
 def values_for_day(rows, day_str):
-    """
-    From all rows of the latest day, build dict {ASSET: value}.
-    Uses 'avg_sentiment' as the numeric value.
-    """
     out = {}
     for r in rows:
         if r.get("day") != day_str:
@@ -73,7 +63,11 @@ def build_message(day_str: str, vals: dict) -> str:
     if not any_line:
         lines.append("- No assets found in data source.")
     lines.append("")
-    lines.append("#Crypto #Gold #Oil #Forex #AI #Sentiment #Trading")
+    # 🟢 توضیح کوتاه علمی
+    lines.append("📈 Analysis based on aggregated daily news sentiment from multiple trusted media sources.")
+    lines.append("")
+    # 🟣 هشتگ‌های گسترده‌تر
+    lines.append("#Crypto #Gold #Oil #Forex #AI #Sentiment #Trading #MarketInsights #FinancialNews #Investing #DataAnalysis")
     lines.append("We are coming soon")
     return "\n".join(lines)
 
@@ -102,7 +96,6 @@ def post_to_zapier(text: str):
         print(f"POST to Zapier failed: {e}")
         return -1, str(e)
 
-# -------- Main --------
 if __name__ == "__main__":
     try:
         payload = fetch_json(DATA_URL)
@@ -111,7 +104,6 @@ if __name__ == "__main__":
             vals = values_for_day(payload, latest)
             msg = build_message(latest, vals)
         elif isinstance(payload, dict):
-            # fallback: if dict form is ever used {BTC:0.1, ...}
             day_str = payload.get("day") or datetime.datetime.utcnow().strftime("%Y-%m-%d")
             vals = {k.upper(): float(v) for k, v in payload.items() if k.upper() in ASSET_ORDER}
             msg = build_message(day_str, vals)
@@ -123,5 +115,3 @@ if __name__ == "__main__":
 
     except Exception as e:
         print("ERROR:", e)
-        # Let the job continue (so the workflow doesn't fail the entire pipeline)
-        # Remove the '|| true' in workflow if you prefer failures to be visible.
